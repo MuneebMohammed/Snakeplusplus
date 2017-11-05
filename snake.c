@@ -69,28 +69,17 @@ uint8_t snake_direction()
 
     //set direction according to x and y values with some margins
     if((x_pos>=0)&&(x_pos < 256))
-    {  
-    	u_flag = 1;
     	direction = 3;
-    }
 
     if((x_pos >= 768)&&(x_pos < 1024))
-    {
-    	rFlag = 1;
      	direction = 1;
-    }
 
     if((y_pos >=0 )&&(y_pos<256))
-    {
-    	d_flag =1;
     	direction = 4;
-    }
 
     if((y_pos >= 768)&&(y_pos<1024))
-    {
-    	u_flag = 1;
-        direction =2;
-    }
+        direction = 2;
+	
    	return direction;
   
 }
