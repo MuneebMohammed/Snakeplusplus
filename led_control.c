@@ -51,25 +51,25 @@ void spi_send_byte (uint8_t databyte)
 void spi_transfer(uint8_t addr, uint8_t opcode, uint8_t data) 
 {
     
-    uint8_t spidata[4];
-    //Create an array with the data to shift out
-    uint8_t offset=addr*2;
-    uint8_t i;
-    for(i=0;i<4;i++)
-        spidata[i]=(uint8_t)0;
-    //put our device data into the array
-    spidata[offset+1]=opcode;
-    spidata[offset]=data;
+    	uint8_t spidata[4];
+    	//Create an array with the data to shift out
+	uint8_t offset=addr*2;
+	uint8_t i;
+	for(i=0;i<4;i++)
+		spidata[i]=(uint8_t)0;
+	//put our device data into the array
+	spidata[offset+1]=opcode;
+	spidata[offset]=data;
+	
+	//enable the line 
+	MAX7219_LOAD0;
 
-    //enable the line 
-    MAX7219_LOAD0;
+	//Now shift out the data 
+	for(i=4;i>0;i--)
+		spi_send_byte(spidata[i-1]);
 
-    //Now shift out the data 
-    for(i=4;i>0;i--)
-        spi_send_byte(spidata[i-1]);
-
-    //latch the data onto the display
-    MAX7219_LOAD1;
+	//latch the data onto the display
+	MAX7219_LOAD1;
 }    
 void init_led_matrix(uint8_t num_devices)
 {
@@ -116,26 +116,26 @@ void set_led_matrix(uint8_t addr, uint8_t row, uint8_t col, uint8_t state)
 {
 	if(addr<0 || addr>=3)
         return;
-    if(row<0 || row>7 || col<0 || col>7)
-        return;
-    uint8_t offset = addr*8;
-    uint8_t val = 0x80 >> col;
-    if(state)
-        status[offset+row]=status[offset+row]|val;
-    else {
-        val=~val;
-        status[offset+row]=status[offset+row]&val;
-    }
-    spi_transfer(addr, row+1,status[offset+row]);
+	if(row<0 || row>7 || col<0 || col>7)
+        	return;
+    	uint8_t offset = addr*8;
+    	uint8_t val = 0x80 >> col;
+    	if(state)
+        	status[offset+row]=status[offset+row]|val;
+    	else {
+        	val=~val;
+        	status[offset+row]=status[offset+row]&val;
+    	}
+    	spi_transfer(addr, row+1,status[offset+row]);
 }
 
 void set_row_led_matrix(uint8_t addr, uint8_t row, uint8_t value) 
 {
-    if(addr<0 || addr>=3)
+    	if(addr<0 || addr>=3)
+        	return;
+    	if(row<0 || row>7)
         return;
-    if(row<0 || row>7)
-        return;
-    uint8_t offset=addr*8;
-    status[offset+row]=value;
-    spi_transfer(addr, row+1,status[offset+row]);
+    	uint8_t offset=addr*8;
+    	status[offset+row]=value;
+    	spi_transfer(addr, row+1,status[offset+row]);
 }
