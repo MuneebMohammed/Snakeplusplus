@@ -4,7 +4,7 @@ BIN = bin/
 SRC = src/
 
 FILE = snake
-LIBS = $(SRC)ledcontrol.c
+LIBS = $(SRC)ledcontrol.c $(SRC)font.h
 
 CC = avr-gcc
 OBJCOPY = avr-objcopy
@@ -22,7 +22,7 @@ all: $(BIN)snake.hex size
 .PHONY: install
 install: transfer size
 
-$(BIN)$(FILE).elf: $(SRC)$(FILE).c $(SRC)led.h $(BIN)
+$(BIN)$(FILE).elf: $(SRC)$(FILE).c $(SRC)ledcontrol.h $(SRC)font.h $(BIN)
 	$(CC) -mmcu=$(CHIP_COMPILE) -DF_CPU=$(DF_CPU) -Os $(CC_FLAGS) $(SRC)$(FILE).c $(LIBS)  -o $(BIN)$(FILE).elf
 
 
@@ -32,8 +32,6 @@ $(BIN)$(FILE).hex: $(BIN)$(FILE).elf
 $(BIN): 
 	mkdir $(BIN)
 
-$(SRC)led.h: ledcontrol.h
-	cp ledcontrol.h $(SRC)/ledcontrol.h
 
 # Display size of file.
 .PHONY: size

@@ -37,7 +37,7 @@
 #include <avr/io.h>
 #include"ledcontrol.h"
 
-static uint8_t status[32];
+static uint8_t status[32] ={0};
 
 void spi_send_byte (uint8_t databyte)
 {
@@ -70,6 +70,16 @@ void spi_transfer(uint8_t addr, uint8_t opcode, uint8_t data)
     //latch the data onto the display
     MAX7219_LOAD1;
 }
+void clear_led_matrix(uint8_t addr)
+{
+	uint8_t offset = addr*8;
+	uint8_t i;
+	for (i = 0; i < 8; ++i)
+	{
+		status[offset+i] = 0;
+		spi_transfer(addr, i+1,0x00);
+	}
+}
 void init_led_matrix(uint8_t num_devices)
 {
 	// SS MOSI SCK
@@ -89,8 +99,8 @@ void init_led_matrix(uint8_t num_devices)
 		// test mode first
 		spi_transfer(i, MAX7219_MODE_TEST, 0);
 		spi_transfer(i, MAX7219_MODE_SCAN_LIMIT, 7);
-		spi_transfer(i, MAX7219_MODE_DECODE, 15);
-		spi_transfer(i, MAX7219_MODE_INTENSITY, 8);
+		spi_transfer(i, MAX7219_MODE_DECODE, 0);
+		spi_transfer(i, MAX7219_MODE_INTENSITY, 4);
 		spi_transfer(i, MAX7219_MODE_POWER, 1);
 	}
 }
@@ -100,16 +110,7 @@ void set_intensity_led_matrix(uint8_t addr, uint8_t value)
 	spi_transfer(addr, MAX7219_MODE_INTENSITY, value);
 }
 
-void clear_led_matrix(uint8_t addr)
-{
-	uint8_t offset = addr*8;
-	uint8_t i;
-	for (i = 0; i < 8; ++i)
-	{
-		status[offset+i] = 0;
-		spi_transfer(addr, i+1, status[offset+i]);
-	}
-}
+
 
 void set_led_matrix(uint8_t addr, uint8_t row, uint8_t col, uint8_t state)
 {

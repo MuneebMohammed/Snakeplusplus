@@ -3,8 +3,11 @@
 
 #include <avr/io.h>
 #include <util/delay.h>
+#include <stdio.h>
 #include <stdlib.h> // for rand() function
 #include "ledcontrol.h"// 8x16 LED Matrix header
+#include "font.h" //Fonts for scrolling text and notes for buzzer
+#include "avr/interrupt.h"
 
 //user defined variables for simplicity
 //typedef unsigned char   uint8_t;
@@ -14,7 +17,158 @@
 static uint8_t gameover = 0;
 
 //variable to hold the highscore of the game
-static uint16_t highscore;
+static uint16_t highscore = 0;
+
+//variable to hold the controller value
+static uint8_t control = 0; // 0-Joystick  1-Accelerometer
+
+//custom delay function
+void delay_ms(uint16_t d)
+{
+  uint16_t i;
+  for (i = 0; i < d/10; ++i)
+  {
+    _delay_ms(1);
+  }
+}
+
+void delay_us(uint16_t d)
+{
+	uint16_t i; 
+	for(i = 0; i < d/10; ++i)
+		_delay_us(1);
+}
+
+void beep (long frequency, long time)
+{ 
+   
+    long x;   
+    long delay_amount = (long)(1000000/frequency/2);
+    long num_cycles = frequency*time/1000;
+ 
+    for (x=0;x<num_cycles;x++)   
+    {    
+        PORTD = 0x80;
+        delay_us(delay_amount);
+        PORTD = 0x00;
+        delay_us(delay_amount);
+    }    
+
+}    
+
+
+void march()
+{    
+	int size = sizeof(melody) / sizeof(int);
+	int note;
+    for (note = 0; note < size; note++) {
+ 
+      // to calculate the note duration, take one second
+      // divided by the note type.
+      //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+      int note_duration = 1000 / tempo[note];
+ 
+      beep(melody[note], note_duration);
+ 
+      // to distinguish the notes, set a minimum time between them.
+      // the note's duration + 30% seems to work well:
+      int pause_bw = note_duration * 1.30;
+      
+      delay_us(10*pause_bw);
+ 
+      // stop the tone playing:
+      beep(0, note_duration);
+ 	}    
+}
+
+void EEPROM_WriteByte(uint16_t v_eepromAddress_u16, uint8_t v_eepromData_u8)
+{
+	while(((EECR)&(1<<(EEWE)))!=0u); // Wait for completion of previous write.
+	                                 // EEWE will be cleared by hardware once Eeprom write is  completed.
+
+	EEAR = v_eepromAddress_u16;  //Load the eeprom address and data
+	EEDR = v_eepromData_u8;
+
+	EECR |= (1<<(EEMWE));   // Eeprom Master Write Enable
+
+	EECR |= (1<<EEWE);     // Start eeprom write by setting EEWE
+}
+
+uint8_t EEPROM_ReadByte(uint16_t v_eepromAddress_u16)
+{
+	while((EECR & (1<<EEWE))!=0u);  //Wait for completion of previous write if any.
+
+	EEAR = v_eepromAddress_u16;    //Load the address from where the data needs to be read.
+	EECR |= (1<<EERE);   // start eeprom read by setting EERE
+
+	return EEDR;             // Return data from data register
+}
+
+
+void scroll_text(char *msg, uint16_t scrollTime)
+{
+  //function used to scroll messages on the matrix display
+  //scrolls input message for a given time in millisecs
+
+  //converts message to dot matrix display pattern and saves it to buffer
+  //the buffer is used to scroll message for a given time
+  
+      
+	char msgBuff[120]; 
+	int segCnt = 0, buffLen, dotCnt, gCnt;
+	uint8_t scrollSpeed = 25; //time in milisecs, decrease it to scroll faster, increase to scroll slower
+	
+	//create dot matrix patter in local buffer 
+	while(msg[gCnt]!= '\0')
+	{
+	   for(dotCnt =0; dotCnt<7; dotCnt++)
+	   {
+		  msgBuff[(gCnt*7)+dotCnt] = pgm_read_byte(&Font[msg[gCnt]-32][dotCnt]);
+	   }  
+		gCnt++;
+	}
+	buffLen = gCnt * 7;
+	  
+	//scroll the msg for the given time.
+	//do
+	//{	
+		for(gCnt =0; gCnt< buffLen; gCnt++)
+		{
+		   for(segCnt = 16; segCnt > 0; segCnt--)
+		   {    
+			 if(segCnt<8)
+			 {
+
+				if((gCnt+segCnt)<buffLen)
+				{
+					   set_row_led_matrix(0,segCnt,msgBuff[(gCnt*1)+segCnt]);
+				}
+				else
+				{
+					  set_row_led_matrix(0,segCnt,0);
+				}
+				
+			  }
+			 else
+			 {
+			   if((gCnt+segCnt)<buffLen)
+			   {
+				set_row_led_matrix(1,segCnt%8,msgBuff[(gCnt*1)+segCnt]);
+			   }
+			   else
+			   {
+				set_row_led_matrix(1,segCnt%8,0);
+			   }
+			 }            
+		  }   
+
+			delay_ms(scrollSpeed);
+			clear_led_matrix(0);
+		    clear_led_matrix(1);      
+		}  
+		 
+	//}while(count);
+}
 
 
 /* This function initializes the ADC, Buzzer and the two led matrices*/
@@ -23,19 +177,33 @@ void init_game()
 
 	//initialise the ADC
 	DDRA = 0; //port a as input
-	ADCSRA=(1<<ADEN) | (1<<ADPS2) | (1<<ADPS1); // enable ADC , sampling freq = clk/64
+	ADCSRA=(1<<ADEN) | (1<<ADPS2) | (1<<ADPS0); // enable ADC , sampling freq = clk/64
 
-	// TODO : make some tune with the buzzer
-
+	
+	
+	//make some tune with the buzzer
+	DDRD = 0x80;
+	PORTD = 0x00;
+	
 	//initialize first LED Matrix
 	init_led_matrix(2);
 	clear_led_matrix(0);
 
 	//initialize second LED Matrix
 	clear_led_matrix(1);
-
-	// TODO : load highscore from eeprom
-
+	
+	//set intensity
+	set_intensity_led_matrix(0, 2);
+	set_intensity_led_matrix(1, 2);
+	
+	//Welcome text
+	scroll_text("WELCOME", 5000);
+	
+	march();
+	highscore = EEPROM_ReadByte(0x00);
+	if(highscore == 255)
+		highscore = 0; 
+	
 }
 
 
@@ -59,29 +227,55 @@ uint16_t get_adc_value(uint8_t channel)
 uint8_t snake_direction()
 {
     uint16_t x_pos, y_pos;
-    static uint8_t direction; //static to retain direction during subsequent calls
+    static uint8_t direction = 0; //static to retain direction during subsequent calls
+	if(control == 0)//Read from joystick 
+	{
+		x_pos = get_adc_value(0);
+		y_pos = get_adc_value(1);
+		
+		if(direction == 4 || direction == 2 || direction == 0)
+		{
+			if((x_pos>=0)&&(x_pos < 400))
+			direction = 3;
 
-    //Read the value of ADC0 into x_pos
-    x_pos = get_adc_value(0);
-
-    //Read the value of ADC1 into y_pos
-    y_pos = get_adc_value(1);
-
-    //set direction according to x and y values with some margins
-    if((x_pos>=0)&&(x_pos < 256))
-    	direction = 3;
-
-    if((x_pos >= 768)&&(x_pos < 1024))
-     	direction = 1;
-
-    if((y_pos >=0 )&&(y_pos<256))
+			if((x_pos >= 620)&&(x_pos < 1024))
+		 	direction = 1;
+		}
+		
+		if(direction == 3 || direction == 1 || direction == 0)
+    	if((y_pos >=0 )&&(y_pos<400))
     	direction = 4;
 
-    if((y_pos >= 768)&&(y_pos<1024))
-        direction =2;
+    	if((y_pos >= 620)&&(y_pos<1024))
+		direction =2;
+		
+	}
+	else
+	{
+		//Read the value of ADC0 into x_pos
+		x_pos = get_adc_value(2);
 
+		//Read the value of ADC1 into y_pos
+		y_pos = get_adc_value(3);
+
+    	//set direction according to x and y values with some margins
+    	if((x_pos>=0)&&(x_pos < 320))
+    	direction = 4;
+
+    	if((x_pos >= 390)&&(x_pos < 1024))
+     	direction = 2;
+     	
+    
+    	if((y_pos >=0)&&(y_pos<350))
+    	direction = 1;
+
+    	if((y_pos >= 400)&&(y_pos<1024))
+        direction = 3;   
+       	
+
+	}
+    
    	return direction;
-
 }
 
 // This function gets random values for food generation
@@ -94,15 +288,9 @@ uint8_t* get_food(uint8_t vlen)
     return v_pos;
 }
 
-//custom delay function
-void delay_ms(int d)
-{
-  int i;
-  for (i = 0; i < d/10; ++i)
-  {
-    _delay_ms(10);
-  }
-}
+
+
+
 
 /* This function contains the main logic of the game. It takes the direction as input
 and draws the modified snake on the display. This function also contains the code for
@@ -113,15 +301,11 @@ void snake_main(uint8_t v_dir)
 
     //A 2D array hold the snake position with rows and column matrices(pixels)
     //old snake
-    static uint8_t snake[][2] = {
-                                  {1,1},{2,1},{3,1},{4,1},{5,1},{6,1},{7,1},{8,1},{9,1},{10,1},
-                                  {11,1},{12,1},{13,1},{14,1},{15,1}
-                                 };
+    static uint8_t snake[50][2] = { {1,1},{2,1} };
+    
     //new snake
-    static uint8_t n_snake[][2] = {
-                                    {1,1},{2,1},{3,1},{4,1},{5,1},{6,1},{7,1},{8,1},{9,1},{10,1},
-                                    {11,1},{12,1},{13,1},{14,1},{15,1}
-                                   };
+    static uint8_t n_snake[50][2] = { {1,1},{2,1} };
+    
     //game variables -->
     //v_len stores the current length of the snake
     static uint8_t v_len = 2;
@@ -136,12 +320,16 @@ void snake_main(uint8_t v_dir)
     static uint8_t v_matrix = 0;
 
     //variable to indicate the delay of the game (which directly affects the speed of the snake)
-    static uint16_t snake_speed = 150; // in milli seconds
+    static uint16_t snake_speed = 17; // in milli seconds
 
     // food variables
     static uint8_t *food_pos; // pointer to hold snake food position
     static uint8_t food_draw = 1; // variable to indicate if food is present on board.
-
+	
+	//load highscore from eeprom
+	highscore = EEPROM_ReadByte(0x00);
+	if(highscore == 255)
+		highscore = 0;
 /*==============================================================================================
 ==========================CHANGE THE SNAKE AND DISPLAY THE MODIFIED SNAKE=======================
 ================================================================================================*/
@@ -156,7 +344,8 @@ void snake_main(uint8_t v_dir)
     // finding if direction change is possible (up to down, left to right, etc not feasible)
     // else no direction change
     if(curr_dir - v_dir == 2 || curr_dir - v_dir == -2)
-    	v_dir = curr_dir;
+    	if(!(curr_dir == 0 && v_dir == 2))
+    		v_dir = curr_dir;
 
     // finding the next 'head' according to the analog input (% rotates through the matrix)
     switch(v_dir)
@@ -239,19 +428,34 @@ void snake_main(uint8_t v_dir)
     // if food is not drawn draw it and make the flag zero
     if(food_draw)
     {
-      	// get a random position for food in range(15,8)
-      	food_pos = get_food(v_len);
-      	food_draw = 0;
-      	if(food_pos[0]>7)
+    	uint8_t flag;
+    	uint8_t seeder = 0;
+       	while(1)
       	{
-        	// draw on matrix 2
-        	set_led_matrix(1, food_pos[0]%8, food_pos[1], 1 );
-      	}
-      	else
-      	{
-        	// draw on matrix 1
-        	set_led_matrix(0, food_pos[0], food_pos[1], 1 );
-      	}
+		  	 flag = 0;
+		  	// get a random position for food
+		  	food_pos = get_food(v_len+seeder);
+		  	seeder++;
+		  	uint8_t i;
+		  	for(i = 0; i<v_len; i++)
+		  	{
+		  		if((food_pos[0] == snake[i][0]) && (food_pos[1] == snake[i][1]))
+		  			flag = 1;
+		  	}
+		  	if(flag == 0)
+		  		break;
+		}
+		  if(food_pos[0]>7)
+		  {
+		  	// draw on matrix 2
+		  	set_led_matrix(1, food_pos[0]%8, food_pos[1], 1 );
+		  }
+		  else
+		  {
+		   	// draw on matrix 1
+		   	set_led_matrix(0, food_pos[0], food_pos[1], 1 );
+		  }
+		  food_draw = 0;
     }
 
 
@@ -260,9 +464,11 @@ void snake_main(uint8_t v_dir)
     if((n_snake[v_len-1][0] == food_pos[0])&&(n_snake[v_len-1][1] == food_pos[1]))
     {
 
-       	// TODO : beep the buzzer with some tune
-
-    	// TODO : Display some simple animation on LEDs
+       	// beep the buzzer with some tune
+		PORTD = 0x80;
+		_delay_ms(1);
+		PORTD = 0x00;
+    	
 
 
        	food_draw = 1; // new food needs to be drawn next time
@@ -309,7 +515,8 @@ void snake_main(uint8_t v_dir)
 	            snake[v_len-1][1] = food_pos[1];
 	            break;
         }
-       snake_speed -= 7; // increase the speed by decreasing the delay
+       if(snake_speed > 5)
+       	snake_speed -= 1; // increase the speed by decreasing the delay
     }
 
    	// check for snake collision
@@ -319,31 +526,45 @@ void snake_main(uint8_t v_dir)
         if((n_snake[i][0] == n_snake[0][0])&&(n_snake[i][1] == n_snake[0][1]))
         {
 
-            // TODO : Scroll "GAMEOVER" on the display
+            beep(NOTE_A6, 250);
+            beep(NOTE_A7, 250);
+            beep(NOTE_A6, 250);
+            
+            //Scroll "GAMEOVER" on the display
+            scroll_text("GAMEOVER!", 5000);
+			
+            
+            if(v_len -2 > highscore)
+            {
+            	highscore = v_len-2;
+   				EEPROM_WriteByte(0x00, highscore);	         	
+            }
+            
+			char* str = (char*)malloc(sizeof(char));
+			
+			sprintf(str, "%s%d", "YOUR SCORE IS ", v_len-2);
+            scroll_text(str, 5000);
+          
+            sprintf(str, "%s%d", "HIGH SCORE IS ", highscore);
+            scroll_text(str, 5000);
+            
+            
+            
 
-            // check if player's score beats the highscore
-            if(v_len - 3 > highscore)
-			{
-		        // TODO : some winner music on buzzer
-
-		        // TODO : Scroll "YOU BEAT THE HIGHSCORE" on display
-
-		        highscore = v_len - 3; //initial length is 3
-
-		        // TODO : store the highscore in the eeprom
-
-		   	}
-
-            // TODO : display player's Score and high score
-
-		   	  v_len = 2; // reset the snake length
-		   	  gameover = 1; // set gameover variable
-          snake_speed = 150; // reset the snake speed
+		   	v_len = 2; // reset the snake length
+		   	gameover = 1; // set gameover variable
+            snake_speed = 17;
+            food_draw = 1; // reset the snake speed
+            beep(NOTE_G6, 200);
+            beep(NOTE_A6, 100);
+            beep(NOTE_DS8, 200);
+          
           break; // break from the for loop
         }
 
     }
-    delay_ms(snake_speed); // delay of the snake (which ultimately affects the game speed)
+    curr_dir = v_dir;
+    delay_ms(snake_speed*10); // delay of the snake (which ultimately affects the game speed)
 }
 
 int main(void)
